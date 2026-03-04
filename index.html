@@ -3,17 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FlowForm | Safar X Integration</title>
+    <title>FlowForm | Safar X Fixed</title>
     <style>
         body { font-family: -apple-system, system-ui, sans-serif; background: #000; color: #fff; display: flex; justify-content: center; padding: 40px 20px; }
         .container { background: #111; padding: 30px; border-radius: 20px; width: 100%; max-width: 500px; border: 1px solid #333; }
-        h2 { margin: 0 0 20px 0; font-weight: 700; color: #fff; }
         .group { margin-bottom: 20px; }
         label { display: block; font-size: 11px; text-transform: uppercase; color: #888; margin-bottom: 8px; font-weight: 800; }
         input, textarea { width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; border-radius: 10px; color: #fff; box-sizing: border-box; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        button { width: 100%; padding: 16px; background: #fff; color: #000; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; margin-top: 10px; }
-        button:disabled { background: #444; color: #888; cursor: not-allowed; }
+        button { width: 100%; padding: 16px; background: #fff; color: #000; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; }
         #status { margin-top: 20px; font-size: 13px; padding: 15px; border-radius: 10px; display: none; word-break: break-all; }
     </style>
 </head>
@@ -26,21 +23,15 @@
             <label>User Email</label>
             <input type="email" name="email" placeholder="ai.karandhiver@gmail.com" required>
         </div>
-
         <div class="group">
-            <label>Capture Media (Image & Video)</label>
-            <div class="grid">
-                <input type="file" name="photo_upload" accept="image/*">
-                <input type="file" name="video_upload" accept="video/*">
-            </div>
+            <label>Attachments</label>
+            <input type="file" name="photo" accept="image/*">
         </div>
-
         <div class="group">
-            <label>Message / Notes</label>
-            <textarea name="user_message" rows="4" placeholder="Type here..."></textarea>
+            <label>Message</label>
+            <textarea name="message" rows="3"></textarea>
         </div>
-
-        <button type="submit" id="submit-btn">Execute API Test</button>
+        <button type="submit" id="submit-btn">Submit to Firestore</button>
     </form>
     <div id="status"></div>
 </div>
@@ -49,115 +40,96 @@
 window.FlowForm = {
     endpoint: "https://firestore.googleapis.com/v1/projects/safarxin2026/databases/(default)/documents/artifacts/flowform-saas/users/SqwjNP27pxVdf1KR3va4alzGJb42/projects/oJY9X5KSS5ku74zJ4EDe/forms/yM6u01MYnQPd8dUI1Nug/submissions",
     
-    // STRICT FORMATTER: Solves the "Invalid Nested Entity" error
+    // THE FIX: This function ensures EVERY nested object is wrapped in mapValue -> fields
     _format: function(data) {
         if (data === null || data === undefined) return { nullValue: null };
         if (typeof data === 'boolean') return { booleanValue: data };
         if (typeof data === 'number') return { doubleValue: data };
         if (Array.isArray(data)) return { arrayValue: { values: data.map(v => this._format(v)) } };
         
-        if (typeof data === 'object' && !(data instanceof Date)) {
-            const fields = {};
+        // If it's an object, we MUST wrap it in mapValue AND fields
+        if (typeof data === 'object') {
+            const wrappedFields = {};
             for (const key in data) {
                 if (Object.prototype.hasOwnProperty.call(data, key)) {
-                    fields[key] = this._format(data[key]);
+                    wrappedFields[key] = this._format(data[key]); // Recursive call
                 }
             }
-            return { mapValue: { fields: fields } };
+            return { mapValue: { fields: wrappedFields } };
         }
         
         return { stringValue: String(data) };
     },
 
     track: async function(customData) {
-        try {
-            // Build the top-level document fields
-            const payload = {
-                fields: {
-                    createdAt: { stringValue: new Date().toISOString() },
-                    userAgent: { stringValue: navigator.userAgent },
-                    // Use the formatter for the entire custom data object
-                    data: this._format(customData)
-                }
-            };
+        // Construct the root document
+        const payload = {
+            fields: {
+                createdAt: { stringValue: new Date().toISOString() },
+                userAgent: { stringValue: navigator.userAgent },
+                // Format the entire custom data object as one big mapValue
+                data: this._format(customData)
+            }
+        };
 
-            const res = await fetch(this.endpoint, { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify(payload) 
-            });
-            
-            const result = await res.json();
-            if(!res.ok) throw new Error(result.error?.message || "Firestore API Rejected Request");
-            return result;
-        } catch(e) { 
-            throw e;
-        }
+        const res = await fetch(this.endpoint, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify(payload) 
+        });
+        
+        const result = await res.json();
+        if(!res.ok) throw new Error(result.error?.message || "API Error");
+        return result;
     }
 };
 
-const toBase64 = f => new Promise((res, rej) => {
+// File to Base64
+const toBase64 = f => new Promise((res) => {
     const r = new FileReader();
     r.readAsDataURL(f);
     r.onload = () => res(r.result);
-    r.onerror = e => rej(e);
 });
 
 document.getElementById('main-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('submit-btn');
     const status = document.getElementById('status');
-    const form = e.target;
+    btn.innerText = "Sending...";
     
-    btn.disabled = true;
-    btn.innerText = "Processing Files...";
-
     try {
-        const formData = new FormData(form);
-        const finalData = {};
-
-        // Collect normal inputs
+        const formData = new FormData(e.target);
+        const submissionData = {};
+        
+        // Get text fields
         for (let [key, value] of formData.entries()) {
-            if (!(value instanceof File)) finalData[key] = value;
+            if (!(value instanceof File)) submissionData[key] = value;
         }
 
-        // Auto-Location
+        // Get Location
         if (navigator.geolocation) {
-            await new Promise(resolve => {
-                navigator.geolocation.getCurrentPosition(p => {
-                    finalData.location = { lat: p.coords.latitude, lng: p.coords.longitude };
-                    resolve();
-                }, () => resolve());
-            });
+            await new Promise(r => navigator.geolocation.getCurrentPosition(p => {
+                submissionData.location = { lat: p.coords.latitude, lng: p.coords.longitude };
+                r();
+            }, () => r()));
         }
 
-        // Process Files
-        const attachments = {};
-        const fileInputs = form.querySelectorAll('input[type="file"]');
-        for (const input of fileInputs) {
-            if (input.files[0]) {
-                attachments[input.name] = await toBase64(input.files[0]);
-            }
+        // Get Files
+        const file = e.target.querySelector('input[type="file"]').files[0];
+        if (file) {
+            submissionData.attachment_base64 = await toBase64(file);
         }
-        finalData.attachments = attachments;
 
-        // EXECUTE
-        const response = await FlowForm.track(finalData);
-
+        await FlowForm.track(submissionData);
         status.style.display = "block";
         status.style.background = "#065f46";
-        status.style.color = "#fff";
-        status.innerHTML = `<strong>SUCCESS!</strong> Data sent to Safar X.`;
-        form.reset();
-
+        status.innerText = "Success! Nested entities formatted and accepted.";
     } catch (err) {
         status.style.display = "block";
         status.style.background = "#7f1d1d";
-        status.style.color = "#fff";
-        status.innerHTML = `<strong>ERROR:</strong> ${err.message}`;
+        status.innerText = "Error: " + err.message;
     } finally {
-        btn.disabled = false;
-        btn.innerText = "Execute API Test";
+        btn.innerText = "Submit to Firestore";
     }
 });
 </script>
