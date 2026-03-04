@@ -1,137 +1,334 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FlowForm | Safar X Fixed</title>
-    <style>
-        body { font-family: -apple-system, system-ui, sans-serif; background: #000; color: #fff; display: flex; justify-content: center; padding: 40px 20px; }
-        .container { background: #111; padding: 30px; border-radius: 20px; width: 100%; max-width: 500px; border: 1px solid #333; }
-        .group { margin-bottom: 20px; }
-        label { display: block; font-size: 11px; text-transform: uppercase; color: #888; margin-bottom: 8px; font-weight: 800; }
-        input, textarea { width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; border-radius: 10px; color: #fff; box-sizing: border-box; }
-        button { width: 100%; padding: 16px; background: #fff; color: #000; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; }
-        #status { margin-top: 20px; font-size: 13px; padding: 15px; border-radius: 10px; display: none; word-break: break-all; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FlowForm | API Simulator & Tracker</title>
+  <style>
+    :root {
+      --bg: #f3f4f6; --card: #ffffff; --text: #1f2937; --text-muted: #6b7280;
+      --border: #e5e7eb; --primary: #3b82f6; --primary-hover: #2563eb;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 40px 20px; line-height: 1.5; }
+    .container { max-width: 1000px; margin: 0 auto; display: grid; gap: 32px; }
+    .header { text-align: center; margin-bottom: 20px; }
+    .header h1 { font-size: 32px; font-weight: 800; margin-bottom: 8px; }
+    .header p { color: var(--text-muted); }
+    
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+    .card { background: var(--card); padding: 24px; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); border: 1px solid var(--border); }
+    .card h2 { font-size: 18px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .card p { font-size: 14px; color: var(--text-muted); margin-bottom: 20px; }
+    
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+    input[type="text"], input[type="email"], textarea, select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; outline: none; transition: border-color 0.2s; }
+    input[type="text"]:focus, input[type="email"]:focus, textarea:focus { border-color: var(--primary); }
+    textarea { resize: vertical; min-height: 80px; }
+    
+    .checkbox-group { display: flex; gap: 12px; margin-top: 8px; }
+    .checkbox-label { display: flex; align-items: center; gap: 6px; font-weight: 400; font-size: 14px; cursor: pointer; }
+    
+    .file-input { background: #f9fafb; border: 1px dashed #d1d5db; padding: 12px; border-radius: 8px; font-size: 13px; width: 100%; cursor: pointer; }
+    
+    .btn { display: inline-block; width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: 0.2s; }
+    .btn:hover { background: var(--primary-hover); }
+    .btn:disabled { opacity: 0.7; cursor: not-allowed; }
+
+    .json-editor { width: 100%; height: 150px; background: #111827; color: #a7f3d0; font-family: monospace; padding: 12px; border-radius: 8px; border: none; outline: none; margin-bottom: 16px; font-size: 13px; }
+    
+    .tracker-status { font-size: 12px; padding: 8px; background: #e0f2fe; color: #1e3a8a; border-radius: 6px; margin-top: 12px; font-family: monospace; }
+  </style>
+
+  <!-- ========================================== -->
+  <!-- 1. FLOWFORM CORE API                       -->
+  <!-- ========================================== -->
+  <script>
+    window.FlowForm = {
+      endpoint: "https://firestore.googleapis.com/v1/projects/safarxin2026/databases/(default)/documents/artifacts/flowform-saas/users/SqwjNP27pxVdf1KR3va4alzGJb42/projects/oJY9X5KSS5ku74zJ4EDe/forms/yM6u01MYnQPd8dUI1Nug/submissions",
+      
+      _format: function(data) {
+        if (data === null || data === undefined) return { nullValue: null };
+        if (typeof data === 'boolean') return { booleanValue: data };
+        if (typeof data === 'number') return Number.isInteger(data) ? { integerValue: data.toString() } : { doubleValue: data };
+        if (typeof data === 'string') return { stringValue: data };
+        if (Array.isArray(data)) return { arrayValue: { values: data.map(this._format.bind(this)) } };
+        if (typeof data === 'object') {
+          const fields = {};
+          for (const key in data) fields[key] = this._format(data[key]);
+          return { mapValue: { fields } };
+        }
+        return { stringValue: String(data) };
+      },
+
+      track: async function(customData) {
+        try {
+          const fields = { 
+            createdAt: { integerValue: Date.now().toString() }, 
+            userAgent: { stringValue: navigator.userAgent }
+          };
+          for (const key in customData) {
+            fields[key] = this._format(customData[key]);
+          }
+
+          const res = await fetch(this.endpoint, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ fields }) 
+          });
+          if(!res.ok) throw new Error("Tracking failed");
+          return true;
+        } catch(e) { console.error(e); return false; }
+      }
+    };
+  </script>
+
+  <!-- ========================================== -->
+  <!-- 2. SILENT ACTIVITY & LOCATION TRACKER      -->
+  <!-- ========================================== -->
+  <script>
+    window.AppTracker = {
+      session: {
+        page: window.location.href,
+        referrer: document.referrer || "Direct",
+        screen_size: `${window.screen.width}x${window.screen.height}`,
+        language: navigator.language,
+        time_opened: new Date().toISOString()
+      },
+      clickHistory: [],
+      locationData: "Permission Not Granted",
+
+      init: function() {
+        // 1. Log a Page View immediately
+        this.ping("page_view");
+
+        // 2. Track all button and link clicks silently
+        document.addEventListener('click', (e) => {
+          const target = e.target.closest('button') || e.target.closest('a');
+          if (target) {
+            const clickInfo = {
+              element: target.tagName,
+              text: target.innerText.substring(0, 30),
+              timestamp: new Date().toISOString()
+            };
+            this.clickHistory.push(clickInfo);
+            // Keep history small to save DB space
+            if (this.clickHistory.length > 5) this.clickHistory.shift(); 
+          }
+        });
+      },
+
+      // Explicitly request location (Usually triggered by a button press)
+      requestLocationAndSend: function() {
+        const statusBox = document.getElementById('tracker-log');
+        statusBox.innerText = "Requesting GPS coordinates...";
+
+        if ("geolocation" in navigator) {
+          navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+              this.locationData = {
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy_meters: pos.coords.accuracy
+              };
+              statusBox.innerText = "Location acquired! Sending to dashboard...";
+              await this.ping("location_captured");
+              statusBox.innerText = `Sent: ${this.locationData.lat}, ${this.locationData.lng}`;
+            },
+            (err) => {
+              statusBox.innerText = "Location Denied or Error: " + err.message;
+              this.locationData = "Denied by User";
+              this.ping("location_denied");
+            },
+            { enableHighAccuracy: true, timeout: 5000 }
+          );
+        } else {
+          statusBox.innerText = "Geolocation not supported by this browser.";
+        }
+      },
+
+      // Beams data to your backend
+      ping: async function(eventType) {
+        if (!window.FlowForm) return;
+        await window.FlowForm.track({
+          event_type: eventType,
+          session_info: this.session,
+          user_location: this.locationData,
+          recent_activity: this.clickHistory
+        });
+      }
+    };
+
+    // Start tracking as soon as the page loads
+    window.onload = () => { window.AppTracker.init(); };
+  </script>
+
+  <!-- ========================================== -->
+  <!-- 3. FORM INTEGRATION SCRIPT                 -->
+  <!-- ========================================== -->
+  <script>
+    function bindFlowForm(formId) {
+      const form = document.getElementById(formId);
+      if(!form) return;
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = form.querySelector('button[type="submit"]');
+        const origText = btn ? btn.innerText : 'Submit';
+        if(btn) { btn.disabled = true; btn.innerText = "Processing Data..."; }
+        
+        try {
+          let payload = {};
+          const formData = new FormData(form);
+          
+          for (let [key, value] of formData.entries()) {
+            let finalValue = value;
+
+            if (value instanceof File) {
+              if (value.size === 0) continue;
+              if(btn) btn.innerText = "Uploading Media to Storage...";
+              
+              const ext = value.name.split('.').pop();
+              const fileName = 'flowform_uploads/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.' + ext;
+              const uploadUrl = 'https://firebasestorage.googleapis.com/v0/b/safarxin2026.firebasestorage.app/o?name=' + encodeURIComponent(fileName);
+              
+              const uploadRes = await fetch(uploadUrl, { method: 'POST', headers: { 'Content-Type': value.type }, body: value });
+              if(!uploadRes.ok) throw new Error("Storage Upload failed. Check Firebase Storage rules.");
+              
+              const uploadData = await uploadRes.json();
+              const downloadUrl = 'https://firebasestorage.googleapis.com/v0/b/safarxin2026.firebasestorage.app/o/' + encodeURIComponent(fileName) + '?alt=media&token=' + uploadData.downloadTokens;
+              
+              let typePrefix = 'FILE:RAW|';
+              if(value.type.startsWith('image/')) typePrefix = 'FILE:IMAGE|';
+              else if(value.type.startsWith('audio/')) typePrefix = 'FILE:AUDIO|';
+              else if(value.type.startsWith('video/')) typePrefix = 'FILE:VIDEO|';
+              
+              finalValue = typePrefix + downloadUrl;
+            }
+
+            if (payload[key]) {
+              if (!Array.isArray(payload[key])) payload[key] = [payload[key]];
+              payload[key].push(finalValue);
+            } else { payload[key] = finalValue; }
+          }
+
+          if (window.FlowForm && window.FlowForm.track) {
+             if(btn) btn.innerText = "Saving to Database...";
+             await window.FlowForm.track({
+                 event_type: "form_submission",
+                 form_id: formId,
+                 ...payload
+             });
+          }
+
+          if(btn) btn.innerText = "Success! Check Dashboard.";
+          form.reset();
+          setTimeout(() => { if(btn) { btn.disabled = false; btn.innerText = origText; } }, 4000);
+        } catch(err) {
+          console.error(err);
+          if(btn) { btn.innerText = "Error! See Console."; setTimeout(() => { btn.disabled = false; btn.innerText = origText; }, 4000); }
+        }
+      });
+    }
+  </script>
 </head>
 <body>
 
-<div class="container">
-    <h2>FlowForm Collector</h2>
-    <form id="main-form">
-        <div class="group">
-            <label>User Email</label>
-            <input type="email" name="email" placeholder="ai.karandhiver@gmail.com" required>
-        </div>
-        <div class="group">
-            <label>Attachments</label>
-            <input type="file" name="photo" accept="image/*">
-        </div>
-        <div class="group">
+  <div class="container">
+    <div class="header">
+      <h1>FlowForm API Simulator</h1>
+      <p>Test all capabilities including the background tracker.</p>
+    </div>
+
+    <div class="grid">
+
+      <!-- TEST CASE 1: Analytics & Location Tracker -->
+      <div class="card" style="border: 2px solid #3b82f6;">
+        <h2>📍 Analytics & Location Tracker</h2>
+        <p>This module automatically tracks your screen size, language, and clicks in the background. Press the button below to explicitly ask for GPS permission.</p>
+        
+        <button id="btn-track-location" class="btn" style="background: #3b82f6; margin-bottom: 8px;">
+          Ask for GPS & Push Data
+        </button>
+        <button id="btn-track-activity" class="btn btn-outline" style="background: white; border: 1px solid var(--border); color: var(--text);">
+          Send Current Click History
+        </button>
+
+        <div id="tracker-log" class="tracker-status">Waiting for action... (Already sent initial page_view to dashboard)</div>
+      </div>
+      
+      <!-- TEST CASE 2: Standard Form -->
+      <div class="card">
+        <h2>📝 Standard Contact Form</h2>
+        <p>Tests text inputs and single file routing.</p>
+        <form id="test-form-basic">
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" name="Name" placeholder="John Doe" required>
+          </div>
+          <div class="form-group">
+            <label>Email Address</label>
+            <input type="email" name="Email" placeholder="john@example.com" required>
+          </div>
+          <div class="form-group">
             <label>Message</label>
-            <textarea name="message" rows="3"></textarea>
-        </div>
-        <button type="submit" id="submit-btn">Submit to Firestore</button>
-    </form>
-    <div id="status"></div>
-</div>
+            <textarea name="Message" placeholder="Hello, I would like to test the backend." required></textarea>
+          </div>
+          <div class="form-group">
+            <label>Attach a File (Image/Doc)</label>
+            <input type="file" name="Attachment" class="file-input">
+          </div>
+          <button type="submit" class="btn" style="background: #111827;">Submit Standard Form</button>
+        </form>
+      </div>
 
-<script>
-window.FlowForm = {
-    endpoint: "https://firestore.googleapis.com/v1/projects/safarxin2026/databases/(default)/documents/artifacts/flowform-saas/users/SqwjNP27pxVdf1KR3va4alzGJb42/projects/oJY9X5KSS5ku74zJ4EDe/forms/yM6u01MYnQPd8dUI1Nug/submissions",
-    
-    // THE FIX: This function ensures EVERY nested object is wrapped in mapValue -> fields
-    _format: function(data) {
-        if (data === null || data === undefined) return { nullValue: null };
-        if (typeof data === 'boolean') return { booleanValue: data };
-        if (typeof data === 'number') return { doubleValue: data };
-        if (Array.isArray(data)) return { arrayValue: { values: data.map(v => this._format(v)) } };
-        
-        // If it's an object, we MUST wrap it in mapValue AND fields
-        if (typeof data === 'object') {
-            const wrappedFields = {};
-            for (const key in data) {
-                if (Object.prototype.hasOwnProperty.call(data, key)) {
-                    wrappedFields[key] = this._format(data[key]); // Recursive call
-                }
-            }
-            return { mapValue: { fields: wrappedFields } };
-        }
-        
-        return { stringValue: String(data) };
-    },
+      <!-- TEST CASE 3: Complex Form -->
+      <div class="card">
+        <h2>🛠 Complex Data Form</h2>
+        <p>Tests arrays (checkboxes) and huge media uploads.</p>
+        <form id="test-form-complex">
+          <div class="form-group">
+            <label>Company Name</label>
+            <input type="text" name="Company" placeholder="Acme Corp">
+          </div>
+          <div class="form-group">
+            <label>Select Services (Checkbox Array test)</label>
+            <div class="checkbox-group">
+              <label class="checkbox-label"><input type="checkbox" name="Services_Required[]" value="Web Design"> Web Design</label>
+              <label class="checkbox-label"><input type="checkbox" name="Services_Required[]" value="SEO"> SEO</label>
+              <label class="checkbox-label"><input type="checkbox" name="Services_Required[]" value="App Dev"> App Dev</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Upload Huge File (Video/Audio test)</label>
+            <input type="file" name="Massive_Media_File" accept="video/*, audio/*" class="file-input">
+          </div>
+          <button type="submit" class="btn" style="background: #10b981;">Submit Complex Form</button>
+        </form>
+      </div>
 
-    track: async function(customData) {
-        // Construct the root document
-        const payload = {
-            fields: {
-                createdAt: { stringValue: new Date().toISOString() },
-                userAgent: { stringValue: navigator.userAgent },
-                // Format the entire custom data object as one big mapValue
-                data: this._format(customData)
-            }
-        };
+    </div>
+  </div>
 
-        const res = await fetch(this.endpoint, { 
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify(payload) 
-        });
-        
-        const result = await res.json();
-        if(!res.ok) throw new Error(result.error?.message || "API Error");
-        return result;
-    }
-};
+  <script>
+    // Bind the HTML forms
+    bindFlowForm('test-form-basic');
+    bindFlowForm('test-form-complex');
 
-// File to Base64
-const toBase64 = f => new Promise((res) => {
-    const r = new FileReader();
-    r.readAsDataURL(f);
-    r.onload = () => res(r.result);
-});
+    // Bind the explicit Tracker buttons
+    document.getElementById('btn-track-location').addEventListener('click', () => {
+      window.AppTracker.requestLocationAndSend();
+    });
 
-document.getElementById('main-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = document.getElementById('submit-btn');
-    const status = document.getElementById('status');
-    btn.innerText = "Sending...";
-    
-    try {
-        const formData = new FormData(e.target);
-        const submissionData = {};
-        
-        // Get text fields
-        for (let [key, value] of formData.entries()) {
-            if (!(value instanceof File)) submissionData[key] = value;
-        }
-
-        // Get Location
-        if (navigator.geolocation) {
-            await new Promise(r => navigator.geolocation.getCurrentPosition(p => {
-                submissionData.location = { lat: p.coords.latitude, lng: p.coords.longitude };
-                r();
-            }, () => r()));
-        }
-
-        // Get Files
-        const file = e.target.querySelector('input[type="file"]').files[0];
-        if (file) {
-            submissionData.attachment_base64 = await toBase64(file);
-        }
-
-        await FlowForm.track(submissionData);
-        status.style.display = "block";
-        status.style.background = "#065f46";
-        status.innerText = "Success! Nested entities formatted and accepted.";
-    } catch (err) {
-        status.style.display = "block";
-        status.style.background = "#7f1d1d";
-        status.innerText = "Error: " + err.message;
-    } finally {
-        btn.innerText = "Submit to Firestore";
-    }
-});
-</script>
+    document.getElementById('btn-track-activity').addEventListener('click', async (e) => {
+      const btn = e.target;
+      const orig = btn.innerText;
+      btn.innerText = "Sending History...";
+      await window.AppTracker.ping("manual_activity_sync");
+      btn.innerText = "Sent! Check Dashboard.";
+      setTimeout(() => btn.innerText = orig, 2000);
+    });
+  </script>
 </body>
 </html>
