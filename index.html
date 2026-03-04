@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FlowForm | API Simulator & Tracker</title>
+  <title>FlowForm | Universal Data Simulator</title>
   <style>
     :root {
       --bg: #f3f4f6; --card: #ffffff; --text: #1f2937; --text-muted: #6b7280;
@@ -36,201 +36,127 @@
     .btn:hover { background: var(--primary-hover); }
     .btn:disabled { opacity: 0.7; cursor: not-allowed; }
 
-    .json-editor { width: 100%; height: 150px; background: #111827; color: #a7f3d0; font-family: monospace; padding: 12px; border-radius: 8px; border: none; outline: none; margin-bottom: 16px; font-size: 13px; }
-    
-    .tracker-status { font-size: 12px; padding: 8px; background: #e0f2fe; color: #1e3a8a; border-radius: 6px; margin-top: 12px; font-family: monospace; }
+    .tracker-status { font-size: 12px; padding: 12px; background: #e0f2fe; color: #1e3a8a; border-radius: 6px; margin-top: 12px; font-family: monospace; border: 1px solid #bae6fd;}
   </style>
 
   <!-- ========================================== -->
-  <!-- 1. FLOWFORM CORE API                       -->
+  <!-- YOUR EXACT TRACKING SCRIPT                 -->
   <!-- ========================================== -->
+  <!-- FLOWFORM UNIFIED TRACKER & SDK -->
   <script>
-    window.FlowForm = {
-      endpoint: "https://firestore.googleapis.com/v1/projects/safarxin2026/databases/(default)/documents/artifacts/flowform-saas/users/SqwjNP27pxVdf1KR3va4alzGJb42/projects/oJY9X5KSS5ku74zJ4EDe/forms/yM6u01MYnQPd8dUI1Nug/submissions",
-      
-      _format: function(data) {
-        if (data === null || data === undefined) return { nullValue: null };
-        if (typeof data === 'boolean') return { booleanValue: data };
-        if (typeof data === 'number') return Number.isInteger(data) ? { integerValue: data.toString() } : { doubleValue: data };
-        if (typeof data === 'string') return { stringValue: data };
-        if (Array.isArray(data)) return { arrayValue: { values: data.map(this._format.bind(this)) } };
-        if (typeof data === 'object') {
-          const fields = {};
-          for (const key in data) fields[key] = this._format(data[key]);
-          return { mapValue: { fields } };
-        }
-        return { stringValue: String(data) };
-      },
-
-      track: async function(customData) {
-        try {
-          const fields = { 
-            createdAt: { integerValue: Date.now().toString() }, 
-            userAgent: { stringValue: navigator.userAgent }
-          };
-          for (const key in customData) {
-            fields[key] = this._format(customData[key]);
-          }
-
-          const res = await fetch(this.endpoint, { 
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ fields }) 
-          });
-          if(!res.ok) throw new Error("Tracking failed");
-          return true;
-        } catch(e) { console.error(e); return false; }
+  window.FlowFormTracker = {
+    sid: localStorage.getItem('ff_sid') || (function(){ let s = Date.now().toString(36)+Math.random().toString(36).substring(2); localStorage.setItem('ff_sid', s); return s; })(),
+    endpoint: "https://firestore.googleapis.com/v1/projects/safarxin2026/databases/(default)/documents/artifacts/flowform-saas/users/SqwjNP27pxVdf1KR3va4alzGJb42/projects/oJY9X5KSS5ku74zJ4EDe/forms/yM6u01MYnQPd8dUI1Nug/submissions",
+    bucket: "safarxin2026.firebasestorage.app",
+    history: [], location: null,
+    
+    // Converts generic JSON to strict Firestore format
+    _format: function(data) {
+      if (data === null || data === undefined) return { nullValue: null };
+      if (typeof data === 'boolean') return { booleanValue: data };
+      if (typeof data === 'number') return Number.isInteger(data) ? { integerValue: data.toString() } : { doubleValue: data };
+      if (typeof data === 'string') return { stringValue: data };
+      if (Array.isArray(data)) return { arrayValue: { values: data.map(this._format.bind(this)) } };
+      if (typeof data === 'object') {
+        const fields = {};
+        for (const key in data) fields[key] = this._format(data[key]);
+        return { mapValue: { fields } };
       }
-    };
-  </script>
+      return { stringValue: String(data) };
+    },
 
-  <!-- ========================================== -->
-  <!-- 2. SILENT ACTIVITY & LOCATION TRACKER      -->
-  <!-- ========================================== -->
-  <script>
-    window.AppTracker = {
-      session: {
-        page: window.location.href,
-        referrer: document.referrer || "Direct",
-        screen_size: `${window.screen.width}x${window.screen.height}`,
-        language: navigator.language,
-        time_opened: new Date().toISOString()
-      },
-      clickHistory: [],
-      locationData: "Permission Not Granted",
+    init: function() {
+      document.addEventListener('click', (e) => {
+        const btn = e.target.closest('button, a');
+        if(btn) {
+          this.history.push(btn.innerText.substring(0, 30).trim() || btn.tagName);
+          if(this.history.length > 8) this.history.shift();
+        }
+      });
+      this.sync({ _event: "page_view", _url: window.location.href });
+    },
 
-      init: function() {
-        // 1. Log a Page View immediately
-        this.ping("page_view");
-
-        // 2. Track all button and link clicks silently
-        document.addEventListener('click', (e) => {
-          const target = e.target.closest('button') || e.target.closest('a');
-          if (target) {
-            const clickInfo = {
-              element: target.tagName,
-              text: target.innerText.substring(0, 30),
-              timestamp: new Date().toISOString()
-            };
-            this.clickHistory.push(clickInfo);
-            // Keep history small to save DB space
-            if (this.clickHistory.length > 5) this.clickHistory.shift(); 
-          }
-        });
-      },
-
-      // Explicitly request location (Usually triggered by a button press)
-      requestLocationAndSend: function() {
-        const statusBox = document.getElementById('tracker-log');
-        statusBox.innerText = "Requesting GPS coordinates...";
-
-        if ("geolocation" in navigator) {
+    askLocation: function() {
+      return new Promise((res) => {
+        if(navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
-            async (pos) => {
-              this.locationData = {
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-                accuracy_meters: pos.coords.accuracy
-              };
-              statusBox.innerText = "Location acquired! Sending to dashboard...";
-              await this.ping("location_captured");
-              statusBox.innerText = `Sent: ${this.locationData.lat}, ${this.locationData.lng}`;
-            },
-            (err) => {
-              statusBox.innerText = "Location Denied or Error: " + err.message;
-              this.locationData = "Denied by User";
-              this.ping("location_denied");
-            },
-            { enableHighAccuracy: true, timeout: 5000 }
+            p => { this.location = { lat: p.coords.latitude, lng: p.coords.longitude }; this.sync({ _event: "location_granted" }); res(this.location); },
+            e => res(null)
           );
-        } else {
-          statusBox.innerText = "Geolocation not supported by this browser.";
+        } else res(null);
+      });
+    },
+
+    sync: async function(customData = {}) {
+      try {
+        const fields = { sessionId: { stringValue: this.sid }, createdAt: { integerValue: Date.now().toString() }, userAgent: { stringValue: navigator.userAgent } };
+        if (this.location) { fields['location_lat'] = { doubleValue: this.location.lat }; fields['location_lng'] = { doubleValue: this.location.lng }; }
+        if (this.history.length > 0) fields['recent_clicks'] = { stringValue: this.history.join(' > ') };
+        
+        for (const [k, v] of Object.entries(customData)) {
+          if(Array.isArray(v)) fields[k] = { stringValue: v.join(', ') };
+          else if(typeof v === 'boolean') fields[k] = { booleanValue: v };
+          else fields[k] = { stringValue: String(v) };
         }
-      },
+        await fetch(this.endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) });
+      } catch(e){}
+    },
+    
+    track: async function(customData) {
+      return this.sync(customData);
+    },
 
-      // Beams data to your backend
-      ping: async function(eventType) {
-        if (!window.FlowForm) return;
-        await window.FlowForm.track({
-          event_type: eventType,
-          session_info: this.session,
-          user_location: this.locationData,
-          recent_activity: this.clickHistory
-        });
-      }
-    };
-
-    // Start tracking as soon as the page loads
-    window.onload = () => { window.AppTracker.init(); };
-  </script>
-
-  <!-- ========================================== -->
-  <!-- 3. FORM INTEGRATION SCRIPT                 -->
-  <!-- ========================================== -->
-  <script>
-    function bindFlowForm(formId) {
+    bindForm: function(formId) {
       const form = document.getElementById(formId);
       if(!form) return;
-
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = form.querySelector('button[type="submit"]');
-        const origText = btn ? btn.innerText : 'Submit';
-        if(btn) { btn.disabled = true; btn.innerText = "Processing Data..."; }
+        const orig = btn ? btn.innerText : 'Submit';
+        if(btn) { btn.disabled = true; btn.innerText = "Processing..."; }
         
         try {
-          let payload = {};
-          const formData = new FormData(form);
-          
-          for (let [key, value] of formData.entries()) {
-            let finalValue = value;
-
-            if (value instanceof File) {
-              if (value.size === 0) continue;
-              if(btn) btn.innerText = "Uploading Media to Storage...";
-              
-              const ext = value.name.split('.').pop();
-              const fileName = 'flowform_uploads/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.' + ext;
-              const uploadUrl = 'https://firebasestorage.googleapis.com/v0/b/safarxin2026.firebasestorage.app/o?name=' + encodeURIComponent(fileName);
-              
-              const uploadRes = await fetch(uploadUrl, { method: 'POST', headers: { 'Content-Type': value.type }, body: value });
-              if(!uploadRes.ok) throw new Error("Storage Upload failed. Check Firebase Storage rules.");
-              
-              const uploadData = await uploadRes.json();
-              const downloadUrl = 'https://firebasestorage.googleapis.com/v0/b/safarxin2026.firebasestorage.app/o/' + encodeURIComponent(fileName) + '?alt=media&token=' + uploadData.downloadTokens;
-              
-              let typePrefix = 'FILE:RAW|';
-              if(value.type.startsWith('image/')) typePrefix = 'FILE:IMAGE|';
-              else if(value.type.startsWith('audio/')) typePrefix = 'FILE:AUDIO|';
-              else if(value.type.startsWith('video/')) typePrefix = 'FILE:VIDEO|';
-              
-              finalValue = typePrefix + downloadUrl;
+          let payload = {}; const fd = new FormData(form);
+          for (let [k, v] of fd.entries()) {
+            let val = v;
+            if (v instanceof File) {
+              if (v.size === 0) continue;
+              if(btn) btn.innerText = "Uploading Media...";
+              const ext = v.name.split('.').pop();
+              const fName = 'flowform/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.' + ext;
+              const upRes = await fetch('https://firebasestorage.googleapis.com/v0/b/' + this.bucket + '/o?name=' + encodeURIComponent(fName), { method: 'POST', headers: { 'Content-Type': v.type }, body: v });
+              if(!upRes.ok) throw new Error("Upload Failed");
+              const upData = await upRes.json();
+              const dl = 'https://firebasestorage.googleapis.com/v0/b/' + this.bucket + '/o/' + encodeURIComponent(fName) + '?alt=media&token=' + upData.downloadTokens;
+              let pfx = 'FILE:RAW|';
+              if(v.type.startsWith('image/')) pfx = 'FILE:IMAGE|'; else if(v.type.startsWith('audio/')) pfx = 'FILE:AUDIO|'; else if(v.type.startsWith('video/')) pfx = 'FILE:VIDEO|';
+              val = pfx + dl;
             }
-
-            if (payload[key]) {
-              if (!Array.isArray(payload[key])) payload[key] = [payload[key]];
-              payload[key].push(finalValue);
-            } else { payload[key] = finalValue; }
+            if (payload[k]) { if (!Array.isArray(payload[k])) payload[k] = [payload[k]]; payload[k].push(val); } 
+            else payload[k] = val;
           }
 
-          if (window.FlowForm && window.FlowForm.track) {
-             if(btn) btn.innerText = "Saving to Database...";
-             await window.FlowForm.track({
-                 event_type: "form_submission",
-                 form_id: formId,
-                 ...payload
-             });
-          }
+          if(btn) btn.innerText = "Saving to CRM...";
+          await this.sync(payload);
 
-          if(btn) btn.innerText = "Success! Check Dashboard.";
-          form.reset();
-          setTimeout(() => { if(btn) { btn.disabled = false; btn.innerText = origText; } }, 4000);
-        } catch(err) {
-          console.error(err);
-          if(btn) { btn.innerText = "Error! See Console."; setTimeout(() => { btn.disabled = false; btn.innerText = origText; }, 4000); }
-        }
+          if(btn) btn.innerText = "Sending Email...";
+          const formDataObj = {};
+          for(let k in payload) formDataObj[k] = Array.isArray(payload[k]) ? payload[k].join(', ') : payload[k];
+          
+          const emailPayload = { access_key: "4a5c1f1c-7500-4616-b06a-910ba1a3891a", subject: "New FlowForm Submission", ...formDataObj };
+          emailPayload["--- System Details ---"] = "---";
+          if(window.FlowFormTracker.location) emailPayload["User Location"] = "https://maps.google.com/?q=" + window.FlowFormTracker.location.lat + "," + window.FlowFormTracker.location.lng;
+          if(window.FlowFormTracker.history.length > 0) emailPayload["Recent Clicks"] = window.FlowFormTracker.history.join(' -> ');
+          
+          await fetch('https://api.web3forms.com/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(emailPayload) });
+
+          if(btn) btn.innerText = "Success!"; form.reset();
+          setTimeout(() => { if(btn) { btn.disabled = false; btn.innerText = orig; } }, 3000);
+        } catch(err) { console.error(err); if(btn) { btn.innerText = "Error!"; setTimeout(() => { btn.disabled = false; btn.innerText = orig; }, 3000); } }
       });
     }
+  };
+  window.FlowFormTracker.init();
   </script>
 </head>
 <body>
@@ -238,30 +164,27 @@
   <div class="container">
     <div class="header">
       <h1>FlowForm API Simulator</h1>
-      <p>Test all capabilities including the background tracker.</p>
+      <p>Test your fully embedded Universal Tracker, GPS capturing, and Web3Forms email delivery.</p>
     </div>
 
     <div class="grid">
 
       <!-- TEST CASE 1: Analytics & Location Tracker -->
       <div class="card" style="border: 2px solid #3b82f6;">
-        <h2>📍 Analytics & Location Tracker</h2>
-        <p>This module automatically tracks your screen size, language, and clicks in the background. Press the button below to explicitly ask for GPS permission.</p>
+        <h2>📍 Background Tracker & GPS</h2>
+        <p>Your screen size, language, and all button clicks are automatically tracked in the background right now. Click below to explicitly request GPS.</p>
         
         <button id="btn-track-location" class="btn" style="background: #3b82f6; margin-bottom: 8px;">
-          Ask for GPS & Push Data
-        </button>
-        <button id="btn-track-activity" class="btn btn-outline" style="background: white; border: 1px solid var(--border); color: var(--text);">
-          Send Current Click History
+          Ask for GPS Permission
         </button>
 
-        <div id="tracker-log" class="tracker-status">Waiting for action... (Already sent initial page_view to dashboard)</div>
+        <div id="tracker-log" class="tracker-status">Initializing... sent 'page_view' to dashboard automatically.</div>
       </div>
       
       <!-- TEST CASE 2: Standard Form -->
       <div class="card">
         <h2>📝 Standard Contact Form</h2>
-        <p>Tests text inputs and single file routing.</p>
+        <p>Tests basic inputs, text areas, and standard file attachments.</p>
         <form id="test-form-basic">
           <div class="form-group">
             <label>Full Name</label>
@@ -286,18 +209,25 @@
       <!-- TEST CASE 3: Complex Form -->
       <div class="card">
         <h2>🛠 Complex Data Form</h2>
-        <p>Tests arrays (checkboxes) and huge media uploads.</p>
+        <p>Tests nested arrays (multiple checkboxes) and huge media uploads (Video/Audio).</p>
         <form id="test-form-complex">
           <div class="form-group">
             <label>Company Name</label>
             <input type="text" name="Company" placeholder="Acme Corp">
           </div>
           <div class="form-group">
-            <label>Select Services (Checkbox Array test)</label>
+            <label>Select Services (Array test)</label>
             <div class="checkbox-group">
               <label class="checkbox-label"><input type="checkbox" name="Services_Required[]" value="Web Design"> Web Design</label>
               <label class="checkbox-label"><input type="checkbox" name="Services_Required[]" value="SEO"> SEO</label>
               <label class="checkbox-label"><input type="checkbox" name="Services_Required[]" value="App Dev"> App Dev</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Budget (Radio test)</label>
+            <div class="checkbox-group">
+              <label class="checkbox-label"><input type="radio" name="Budget" value="Under $5k"> &lt; $5k</label>
+              <label class="checkbox-label"><input type="radio" name="Budget" value="$5k - $10k"> $5k - $10k</label>
             </div>
           </div>
           <div class="form-group">
@@ -312,22 +242,22 @@
   </div>
 
   <script>
-    // Bind the HTML forms
-    bindFlowForm('test-form-basic');
-    bindFlowForm('test-form-complex');
+    // Bind the HTML forms to the FlowForm Engine
+    window.FlowFormTracker.bindForm('test-form-basic');
+    window.FlowFormTracker.bindForm('test-form-complex');
 
-    // Bind the explicit Tracker buttons
-    document.getElementById('btn-track-location').addEventListener('click', () => {
-      window.AppTracker.requestLocationAndSend();
-    });
-
-    document.getElementById('btn-track-activity').addEventListener('click', async (e) => {
-      const btn = e.target;
-      const orig = btn.innerText;
-      btn.innerText = "Sending History...";
-      await window.AppTracker.ping("manual_activity_sync");
-      btn.innerText = "Sent! Check Dashboard.";
-      setTimeout(() => btn.innerText = orig, 2000);
+    // Bind the explicit Tracker button
+    document.getElementById('btn-track-location').addEventListener('click', async () => {
+      const logBox = document.getElementById('tracker-log');
+      logBox.innerText = "Requesting GPS coordinates...";
+      
+      const loc = await window.FlowFormTracker.askLocation();
+      
+      if (loc) {
+        logBox.innerHTML = `<strong>Location captured!</strong><br>Lat: ${loc.lat}<br>Lng: ${loc.lng}<br>Data sent to dashboard automatically.`;
+      } else {
+        logBox.innerText = "Location access denied or unavailable.";
+      }
     });
   </script>
 </body>
