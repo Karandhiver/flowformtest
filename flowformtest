@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlowForm | Advanced API Test</title>
+    <style>
+        body { font-family: -apple-system, system-ui, sans-serif; background: #fafafa; display: flex; justify-content: center; padding: 40px 20px; color: #1a1a1a; }
+        .card { background: white; padding: 32px; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.04); width: 100%; max-width: 500px; border: 1px solid #eaeaea; }
+        h2 { margin: 0 0 10px 0; font-size: 1.6rem; letter-spacing: -0.02em; }
+        p { color: #666; font-size: 0.9rem; margin-bottom: 24px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; color: #888; }
+        input[type="email"], input[type="text"], textarea { width: 100%; padding: 12px; border: 1px solid #e0e0e0; border-radius: 8px; box-sizing: border-box; font-size: 1rem; background: #fdfdfd; }
+        input[readonly] { background: #f4f7fb; color: #007AFF; border-color: #d0e3ff; cursor: not-allowed; }
+        .file-input-wrapper { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        button { width: 100%; padding: 16px; background: #000; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem; margin-top: 10px; transition: all 0.2s; }
+        button:hover { background: #333; transform: translateY(-1px); }
+        button:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+        #status { margin-top: 20px; padding: 12px; border-radius: 8px; font-size: 0.85rem; display: none; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>FlowForm Demo</h2>
+    <p>Testing Safar X / Flowcase API connectivity.</p>
+    
+    <form id="submission-form">
+        <div class="form-group">
+            <label>Email Address</label>
+            <input type="email" name="email" placeholder="hello@flowcase.in" required>
+        </div>
+
+        <div class="form-group">
+            <label>Current Location (Auto)</label>
+            <input type="text" name="location_str" id="geo-field" placeholder="Detecting GPS..." readonly>
+        </div>
+
+        <div class="form-group">
+            <label>Media Uploads</label>
+            <div class="file-input-wrapper">
+                <input type="file" name="image" accept="image/*" id="img-input">
+                <input type="file" name="video" accept="video/*" id="vid-input">
+            </div>
+            <small style="color: #999; font-size: 0.7rem; display: block; mt: 5px;">*Max 1MB total for Firestore documents.</small>
+        </div>
+
+        <div class="form-group">
+            <label>Notes</label>
+            <textarea name="message" rows="3" placeholder="Any additional data..."></textarea>
+        </div>
+
+        <button type="submit" id="submit-btn">Send to FlowForm</button>
+    </form>
+    <div id="status"></div>
+</div>
+
+<script>
+    window.FlowForm = {
+        endpoint: "https://firestore.googleapis.com/v1/projects/safarxin2026/databases/(default)/documents/artifacts/flowform-saas/users/SqwjNP27pxVdf1KR3va4alzGJb42/projects/oJY9X5KSS5ku74zJ4EDe/forms/yM6u01MYnQPd8dUI1Nug/submissions",
+        
+        _format: function(data) {
+            if (data === null || data === undefined) return { nullValue: null };
+            if (typeof data === 'boolean') return { booleanValue: data };
+            if (typeof data === 'number') return Number.isInteger(data) ? { integerValue: data.toString() } : { doubleValue: data };
+            if (typeof data === 'string') return { stringValue: data };
+            if (Array.isArray(data)) return { arrayValue: { values: data.map(v => this._format(v)) } };
+            if (typeof data === 'object') {
+                const fields = {};
+                for (const key in data) fields[key] = this._format(data[key]);
+                return { mapValue: { fields } };
+            }
+            return { stringValue: String(data) };
+        },
+
+        track: async function(customData) {
+            try {
+                const fields = { 
+                    createdAt: { integerValue: Date.now().toString() }, 
+                    userAgent: { stringValue: navigator.userAgent }
+                };
+                
+                for (const key in customData) {
+                    fields[key] = this._format(customData[key]);
+                }
+
+                const res = await fetch(this.endpoint, { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ fields }) 
+                });
+                
+                if(!res.ok) {
+                    const errBody = await res.json();
+                    throw new Error(errBody.error?.message || "Tracking failed");
+                }
+                return true;
+            } catch(e) { 
+                console.error("FlowForm Error:", e); 
+                throw e; 
+            }
+        }
+    };
+</script>
+
+<script>
+    // 1. AUTO-LOCATION
+    const geoField = document.getElementById('geo-field');
+    let latLng = { lat: 0, lng: 0 };
+
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((p) => {
+            latLng = { lat: p.coords.latitude, lng: p.coords.longitude };
+            geoField.value = `${latLng.lat.toFixed(4)}, ${latLng.lng.toFixed(4)}`;
+        });
+    }
+
+    // 2. FILE CONVERSION HELPER
+    const toBase64 = file => new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => res(reader.result);
+        reader.onerror = e => rej(e);
+    });
+
+    // 3. FORM BINDING
+    const form = document.getElementById('submission-form');
+    const btn = document.getElementById('submit-btn');
+    const status = document.getElementById('status');
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        btn.disabled = true;
+        btn.innerText = "Processing...";
+        status.style.display = "none";
+
+        try {
+            const formData = new FormData(form);
+            const imgFile = document.getElementById('img-input').files[0];
+            const vidFile = document.getElementById('vid-input').files[0];
+
+            // Build the tracking object
+            const trackingData = {
+                email: formData.get('email'),
+                message: formData.get('message'),
+                location_data: latLng, // Nested object test
+                files: {
+                    image: imgFile ? await toBase64(imgFile) : "none",
+                    video: vidFile ? await toBase64(vidFile) : "none"
+                },
+                page_info: {
+                    url: window.location.href,
+                    title: document.title
+                }
+            };
+
+            // USE YOUR FLOWFORM TRACK METHOD
+            const success = await FlowForm.track(trackingData);
+
+            if (success) {
+                status.style.display = "block";
+                status.style.background = "#e6fffa";
+                status.style.color = "#234e52";
+                status.innerText = "✓ Successfully sent to Firestore!";
+                form.reset();
+            }
+        } catch (err) {
+            status.style.display = "block";
+            status.style.background = "#fff5f5";
+            status.style.color = "#c53030";
+            status.innerText = "Error: " + err.message;
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Send to FlowForm";
+        }
+    });
+</script>
+
+</body>
+</html>
